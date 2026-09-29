@@ -17,14 +17,14 @@ export default function CakePage({ microphonePermission, onMicrophoneStart }) {
   const [micState, setMicState] = useState(microphonePermission === 'requesting' ? 'requesting' : 'idle')
   const streamRef = useRef(null)
   const contextRef = useRef(null)
-  const frameRef = useRef(null)
+  const intervalRef = useRef(null)
   const litCount = candles.filter(Boolean).length
 
   const stopListening = () => {
-    if (frameRef.current) cancelAnimationFrame(frameRef.current)
+    if (intervalRef.current) clearInterval(intervalRef.current)
     streamRef.current?.getTracks().forEach((track) => track.stop())
     contextRef.current?.close()
-    frameRef.current = null
+    intervalRef.current = null
     streamRef.current = null
     contextRef.current = null
   }
@@ -63,28 +63,19 @@ export default function CakePage({ microphonePermission, onMicrophoneStart }) {
       const analyser = context.createAnalyser()
       const source = context.createMediaStreamSource(stream)
       const frequencies = new Uint8Array(analyser.frequencyBinCount)
-      let loudFrames = 0
-      let lastBlow = 0
 
       analyser.fftSize = 256
-      analyser.smoothingTimeConstant = 0.2
       source.connect(analyser)
       streamRef.current = stream
       contextRef.current = context
-      await context.resume()
       setMicState('listening')
 
-      const listen = (time) => {
+      intervalRef.current = setInterval(() => {
         analyser.getByteFrequencyData(frequencies)
-        loudFrames = isBlowing(frequencies) ? loudFrames + 1 : 0
-        if (loudFrames >= 3 && time - lastBlow > 650) {
-          extinguish(3)
-          loudFrames = 0
-          lastBlow = time
+        if (isBlowing(frequencies)) {
+          setCandles((current) => current.map((lit) => lit && Math.random() > 0.5 ? false : lit))
         }
-        frameRef.current = requestAnimationFrame(listen)
-      }
-      frameRef.current = requestAnimationFrame(listen)
+      }, 200)
     } catch {
       stopListening()
       setMicState('denied')
