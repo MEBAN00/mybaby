@@ -12,21 +12,15 @@ function MicrophoneIcon() {
   )
 }
 
-export default function CakePage({ microphonePermission, onMicrophoneStart }) {
+export default function CakePage({ microphone, onMicrophoneRequest, onMicrophoneStart }) {
   const [candles, setCandles] = useState(() => Array(CANDLE_COUNT).fill(true))
-  const [micState, setMicState] = useState(microphonePermission === 'requesting' ? 'requesting' : 'idle')
-  const streamRef = useRef(null)
-  const contextRef = useRef(null)
+  const [micState, setMicState] = useState(microphone.status)
   const intervalRef = useRef(null)
   const litCount = candles.filter(Boolean).length
 
   const stopListening = () => {
     if (intervalRef.current) clearInterval(intervalRef.current)
-    streamRef.current?.getTracks().forEach((track) => track.stop())
-    contextRef.current?.close()
     intervalRef.current = null
-    streamRef.current = null
-    contextRef.current = null
   }
 
   useEffect(() => stopListening, [])
@@ -46,58 +40,29 @@ export default function CakePage({ microphonePermission, onMicrophoneStart }) {
     setMicState('complete')
   }, [litCount, micState])
 
-  const startMicrophone = async () => {
-    const AudioContext = window.AudioContext || window.webkitAudioContext
-    if (!navigator.mediaDevices?.getUserMedia || !AudioContext) {
-      setMicState('unsupported')
-      return
-    }
-
+  const startListening = () => {
     stopListening()
-    setMicState('requesting')
+    if (!microphone.analyser) return
     onMicrophoneStart?.()
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const context = new AudioContext()
-      const analyser = context.createAnalyser()
-      const source = context.createMediaStreamSource(stream)
-      const frequencies = new Uint8Array(analyser.frequencyBinCount)
-
-      analyser.fftSize = 256
-      source.connect(analyser)
-      streamRef.current = stream
-      contextRef.current = context
-      setMicState('listening')
-
-      intervalRef.current = setInterval(() => {
-        analyser.getByteFrequencyData(frequencies)
-        if (isBlowing(frequencies)) {
-          setCandles((current) => current.map((lit) => lit && Math.random() > 0.5 ? false : lit))
-        }
-      }, 200)
-    } catch {
-      stopListening()
-      setMicState('denied')
-    }
+    const frequencies = new Uint8Array(microphone.analyser.frequencyBinCount)
+    setMicState('listening')
+    intervalRef.current = setInterval(() => {
+      microphone.analyser.getByteFrequencyData(frequencies)
+      if (isBlowing(frequencies)) {
+        setCandles((current) => current.map((lit) => lit && Math.random() > 0.5 ? false : lit))
+      }
+    }, 200)
   }
 
   useEffect(() => {
-    if (microphonePermission === 'granted' && micState !== 'listening' && micState !== 'complete') {
-      startMicrophone()
-    } else if (microphonePermission === 'denied') {
-      setMicState('denied')
-    } else if (microphonePermission === 'unsupported') {
-      setMicState('unsupported')
-    } else if (microphonePermission === 'requesting') {
-      setMicState('requesting')
-    }
-  }, [microphonePermission])
+    if (microphone.status === 'granted') startListening()
+    else setMicState(microphone.status)
+  }, [microphone])
 
   const relight = () => {
     stopListening()
     setCandles(Array(CANDLE_COUNT).fill(true))
-    setMicState('idle')
+    startListening()
   }
 
   const status = {
@@ -141,7 +106,7 @@ export default function CakePage({ microphonePermission, onMicrophoneStart }) {
         {micState === 'complete' ? (
           <button className="mic-button" onClick={relight}>Relight the candles</button>
         ) : (
-          <button className="mic-button" onClick={startMicrophone} disabled={micState === 'requesting' || micState === 'listening'}>
+          <button className="mic-button" onClick={onMicrophoneRequest} disabled={micState === 'requesting' || micState === 'listening'}>
             <MicrophoneIcon />{micState === 'listening' ? 'Microphone enabled' : micState === 'requesting' ? 'Waiting for permission' : 'Enable microphone'}
           </button>
         )}

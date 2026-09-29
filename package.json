@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/data.test.js src/blowDetection.test.js",
+    "test": "node --test src/data.test.js src/blowDetection.test.js src/navigation.test.js",
     "test:content": "node --test src/data.test.js"
   },
   "dependencies": {

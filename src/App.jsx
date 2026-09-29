@@ -1,18 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { keepsake } from './data.js'
 import CakePage from './CakePage.jsx'
+import { movePage } from './navigation.js'
 
 const pageNames = ['Cover', 'Playlist', 'Photos', 'Letter', 'Wish']
 let microphonePermissionRequest
 
 function requestMicrophonePermission() {
-  if (!navigator.mediaDevices?.getUserMedia) return Promise.resolve('unsupported')
+  const AudioContext = window.AudioContext || window.webkitAudioContext
+  if (!navigator.mediaDevices?.getUserMedia || !AudioContext) return Promise.resolve({ status: 'unsupported' })
   microphonePermissionRequest ??= navigator.mediaDevices.getUserMedia({ audio: true })
     .then((stream) => {
-      stream.getTracks().forEach((track) => track.stop())
-      return 'granted'
+      const context = new AudioContext()
+      const analyser = context.createAnalyser()
+      context.createMediaStreamSource(stream).connect(analyser)
+      analyser.fftSize = 256
+      return { status: 'granted', analyser }
     })
-    .catch(() => 'denied')
+    .catch(() => ({ status: 'denied' }))
   return microphonePermissionRequest
 }
 
@@ -141,28 +146,34 @@ export default function App() {
   const [activeTrack, setActiveTrack] = useState(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [openPhoto, setOpenPhoto] = useState(null)
-  const [microphonePermission, setMicrophonePermission] = useState('requesting')
+  const [microphone, setMicrophone] = useState({ status: 'requesting' })
   const audioRef = useRef(null)
   const touchStart = useRef(null)
 
   useEffect(() => {
     keepsake.photos.forEach(({ src }) => { const image = new Image(); image.src = src })
-    requestMicrophonePermission().then(setMicrophonePermission)
+    requestMicrophonePermission().then(setMicrophone)
   }, [])
+
+  const retryMicrophone = () => {
+    microphonePermissionRequest = undefined
+    setMicrophone({ status: 'requesting' })
+    requestMicrophonePermission().then(setMicrophone)
+  }
 
   useEffect(() => {
     const handleKey = (event) => {
       if (openPhoto || ['INPUT', 'BUTTON', 'AUDIO'].includes(document.activeElement?.tagName)) return
-      if (event.key === 'ArrowRight') changePage(page === pageNames.length - 1 ? 0 : page + 1)
-      if (event.key === 'ArrowLeft' && page > 0) changePage(page - 1)
+      if (event.key === 'ArrowRight') changePage(1)
+      if (event.key === 'ArrowLeft') changePage(-1)
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   })
 
-  const changePage = (nextPage) => {
-    setDirection(nextPage < page ? 'back' : 'next')
-    setPage(nextPage)
+  const changePage = (step) => {
+    setDirection(step < 0 ? 'back' : 'next')
+    setPage((current) => movePage(current, step, pageNames.length))
     requestAnimationFrame(() => document.querySelector('.book')?.focus({ preventScroll: true }))
   }
 
@@ -186,7 +197,10 @@ export default function App() {
   }
 
   const handlePointerDown = (event) => {
-    if (event.target.closest('button, audio, dialog')) return
+    if (event.target.closest('button, audio, dialog')) {
+      touchStart.current = null
+      return
+    }
     touchStart.current = { x: event.clientX, y: event.clientY }
   }
 
@@ -196,8 +210,8 @@ export default function App() {
     const dy = event.clientY - touchStart.current.y
     touchStart.current = null
     if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.25) return
-    if (dx < 0) changePage(page === pageNames.length - 1 ? 0 : page + 1)
-    else if (page > 0) changePage(page - 1)
+    if (dx < 0) changePage(1)
+    else changePage(-1)
   }
 
   const pages = [
@@ -205,7 +219,7 @@ export default function App() {
     <Playlist key="playlist" activeTrack={activeTrack} isPlaying={isPlaying} onTrack={toggleTrack} />,
     <Photos key="photos" onOpen={setOpenPhoto} />,
     <Letter key="letter" />,
-    <CakePage key="wish" microphonePermission={microphonePermission} onMicrophoneStart={() => audioRef.current?.pause()} />,
+    <CakePage key="wish" microphone={microphone} onMicrophoneRequest={retryMicrophone} onMicrophoneStart={() => audioRef.current?.pause()} />,
   ]
 
   return (
@@ -224,13 +238,13 @@ export default function App() {
           <div className="paper-grain" aria-hidden="true" />
           <div className="page-key" key={page}>{pages[page]}</div>
           <nav className="book-nav" aria-label="Keepsake pages">
-            <button className="nav-button back" onClick={() => changePage(page - 1)} disabled={page === 0}>
+            <button className="nav-button back" onClick={() => changePage(-1)} disabled={page === 0}>
               <Arrow direction="left" /> Back
             </button>
             <div className="page-dots" aria-label={`Page ${page + 1} of ${pageNames.length}`}>
               {pageNames.map((name, index) => <span key={name} className={index === page ? 'is-current' : ''} aria-hidden="true" />)}
             </div>
-            <button className="nav-button next" onClick={() => changePage(page === pageNames.length - 1 ? 0 : page + 1)}>
+            <button className="nav-button next" onClick={() => changePage(1)}>
               {page === pageNames.length - 1 ? 'Start over' : 'Turn'} <Arrow direction="right" />
             </button>
           </nav>
