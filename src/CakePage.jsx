@@ -44,6 +44,7 @@ export default function CakePage({ microphone, onMicrophoneRequest, onMicrophone
     stopListening()
     if (!microphone.analyser) return
     onMicrophoneStart?.()
+    microphone.context?.resume().catch(() => {})
     const frequencies = new Uint8Array(microphone.analyser.frequencyBinCount)
     setMicState('listening')
     intervalRef.current = setInterval(() => {

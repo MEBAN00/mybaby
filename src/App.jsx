@@ -13,9 +13,10 @@ function requestMicrophonePermission() {
     .then((stream) => {
       const context = new AudioContext()
       const analyser = context.createAnalyser()
-      context.createMediaStreamSource(stream).connect(analyser)
+      const source = context.createMediaStreamSource(stream)
+      source.connect(analyser)
       analyser.fftSize = 256
-      return { status: 'granted', analyser }
+      return { status: 'granted', analyser, context, source, stream }
     })
     .catch(() => ({ status: 'denied' }))
   return microphonePermissionRequest
